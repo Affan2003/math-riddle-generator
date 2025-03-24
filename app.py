@@ -1,8 +1,8 @@
 # app.py
 import streamlit as st
-from transformers import GPT2Tokenizer, GPT2LMHeadModel, pipeline
 import logging
 import random
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -30,12 +30,11 @@ When it's not roasting you, it's actually helpful
 *Warning: May occasionally invent new math rules just to win arguments*
 """
 
-# Load models with error handling
 @st.cache_resource
 def load_model(model_path):
     try:
-        tokenizer = GPT2Tokenizer.from_pretrained(model_path)
-        model = GPT2LMHeadModel.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModelForCausalLM.from_pretrained(model_path)
         generator = pipeline(
             "text-generation",
             model=model,
@@ -49,7 +48,6 @@ def load_model(model_path):
         st.error(f"Failed to load model from {model_path}. Please check the logs.")
         return None
 
-# Function to generate math meme examples dynamically
 def generate_meme_examples(generator, num_examples):
     examples = []
     operations = ['+', '-', '*', '/', '^']
@@ -57,16 +55,13 @@ def generate_meme_examples(generator, num_examples):
     
     for _ in range(num_examples):
         try:
-            # Generate random incorrect math expression
             expr = f"{random.choice(numbers)} {random.choice(operations)} {random.choice(numbers)}"
             if random.random() > 0.5:
                 expr += f" {random.choice(operations)} {random.choice(numbers)}"
             
-            # Make it intentionally wrong
             wrong_answer = random.randint(1, 20)
             prompt = f"Incorrect: {expr} = {wrong_answer}\nCorrect:"
             
-            # Generate correction
             output = generator(
                 prompt,
                 max_length=100,
@@ -87,7 +82,6 @@ def generate_meme_examples(generator, num_examples):
     
     return examples if examples else None
 
-# Improved meme repair function
 def repair_meme(generator, meme_text):
     try:
         if "=" not in meme_text:
@@ -102,7 +96,7 @@ Correct:"""
             prompt,
             max_length=150,
             num_return_sequences=1,
-            temperature=0.2,  # Lower temperature for more precise outputs
+            temperature=0.2,
             do_sample=True,
             top_k=40,
             top_p=0.85,
@@ -112,7 +106,6 @@ Correct:"""
         full_response = output[0]["generated_text"]
         correction = full_response.split("Correct:")[1].strip() if "Correct:" in full_response else full_response
         
-        # Clean up the output
         correction = correction.split("\n")[0].strip()
         if "=" not in correction:
             correction = f"{meme_text.split('=')[0].strip()} = {correction}"
@@ -122,11 +115,9 @@ Correct:"""
         logger.error(f"Error repairing meme: {e}")
         return None
 
-# Streamlit app
 def main():
     st.set_page_config(page_title="Math Fun", layout="wide")
     
-    # Sidebar navigation
     st.sidebar.title("Navigation")
     app_mode = st.sidebar.radio("Choose a mode:", 
                               ["Math Riddles", "Math Meme Repair"], 
@@ -136,7 +127,6 @@ def main():
         st.title("Math Meme Repair Tool 🔧")
         st.write("Fix those viral math memes that get shared with incorrect solutions!")
         
-        # Load model once
         meme_generator = load_model("./math_meme_repair")
         
         tab1, tab2, tab3 = st.tabs(["Before/After Examples", "Solve Your Math Meme", "Error Rating"])

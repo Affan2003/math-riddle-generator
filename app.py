@@ -30,110 +30,83 @@ When it's not roasting you, it's actually helpful
 *Warning: May occasionally invent new math rules just to win arguments*
 """
 
-# Load the riddle model
+# Load models with error handling
 @st.cache_resource
-def load_riddle_model():
+def load_model(model_path):
     try:
-        model_path = "./math_riddle_generator"
         tokenizer = GPT2Tokenizer.from_pretrained(model_path)
         model = GPT2LMHeadModel.from_pretrained(model_path)
-        generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
-        logger.info("Riddle model loaded successfully!")
+        generator = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            device="cpu"
+        )
+        logger.info(f"Model loaded successfully from {model_path}!")
         return generator
     except Exception as e:
-        logger.error(f"Error loading riddle model: {e}")
-        st.error("Failed to load the riddle model. Please check the logs.")
+        logger.error(f"Error loading model: {e}")
+        st.error(f"Failed to load model from {model_path}. Please check the logs.")
         return None
 
-# Load the meme repair model
-@st.cache_resource
-def load_meme_model():
-    try:
-        model_path = "./math_meme_repair"
-        tokenizer = GPT2Tokenizer.from_pretrained(model_path)
-        model = GPT2LMHeadModel.from_pretrained(model_path)
-        generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
-        logger.info("Meme repair model loaded successfully!")
-        return generator
-    except Exception as e:
-        logger.error(f"Error loading meme repair model: {e}")
-        st.error("Failed to load the meme repair model. Please check the logs.")
-        return None
-
-# Function to generate riddles
-def generate_riddles(generator, num_riddles):
-    riddles = []
-    for _ in range(num_riddles):
-        try:
-            output = generator("Riddle:", max_length=50, num_return_sequences=1)
-            riddles.append(output[0]["generated_text"])
-        except Exception as e:
-            logger.error(f"Error generating riddle: {e}")
-            st.error("Failed to generate a riddle. Please check the logs.")
-    return riddles
-
-# Function to generate solution for a custom riddle
-def generate_solution(generator, riddle):
-    try:
-        prompt = f"Riddle: {riddle}\nSolution:"
-        output = generator(prompt, max_length=100, num_return_sequences=1)
-        solution = output[0]["generated_text"].replace(prompt, "").strip()
-        return solution
-    except Exception as e:
-        logger.error(f"Error generating solution: {e}")
-        st.error("Failed to generate a solution. Please check the logs.")
-        return None
-
-# Function to generate before/after examples
+# Function to generate math meme examples dynamically
 def generate_meme_examples(generator, num_examples):
     examples = []
-    prompts = [
-        "Incorrect: 2 + 2 × 2 = 8",
-        "Incorrect: 10 ÷ 0.5 = 5",
-        "Incorrect: 1/2 + 1/3 = 2/5",
-        "Incorrect: 5! = 100",
-        "Incorrect: 8 ÷ 2(2+2) = 1",
-        "Incorrect: 4^0 = 0",
-        "Incorrect: log(100) = 10",
-        "Incorrect: 1 mile = 5000 feet",
-        "Incorrect: (x + y)(x - y) = x² + y²",
-        "Incorrect: 0.1 + 0.2 = 0.3"
-    ]
+    operations = ['+', '-', '*', '/', '^']
+    numbers = [str(i) for i in range(1, 10)]
     
-    selected_prompts = random.sample(prompts, min(num_examples, len(prompts)))
-    
-    for prompt in selected_prompts:
+    for _ in range(num_examples):
         try:
-            output = generator(prompt, max_length=100, num_return_sequences=1, temperature=0.7)
+            # Generate random incorrect math expression
+            expr = f"{random.choice(numbers)} {random.choice(operations)} {random.choice(numbers)}"
+            if random.random() > 0.5:
+                expr += f" {random.choice(operations)} {random.choice(numbers)}"
+            
+            # Make it intentionally wrong
+            wrong_answer = random.randint(1, 20)
+            prompt = f"Incorrect: {expr} = {wrong_answer}\nCorrect:"
+            
+            # Generate correction
+            output = generator(
+                prompt,
+                max_length=100,
+                num_return_sequences=1,
+                temperature=0.3,
+                truncation=True
+            )
+            
             generated_text = output[0]["generated_text"]
             
-            # Extract before and after parts
             if "\nCorrect:" in generated_text:
-                before = prompt.replace("Incorrect: ", "").strip()
+                before = prompt.replace("Incorrect: ", "").split("\n")[0].strip()
                 after = generated_text.split("\nCorrect:")[1].strip()
                 examples.append({"before": before, "after": after})
+                
         except Exception as e:
             logger.error(f"Error generating meme example: {e}")
     
-    return examples
+    return examples if examples else None
 
-# Function to repair math meme with improved prompt
+# Improved meme repair function
 def repair_meme(generator, meme_text):
     try:
-        # More detailed prompt for better results
-        prompt = f"""The following math statement is incorrect. Please provide the correct version and a brief explanation.
+        if "=" not in meme_text:
+            meme_text += " = ?"
+            
+        prompt = f"""Fix this incorrect math statement and explain the error:
 
 Incorrect: {meme_text}
 Correct:"""
         
         output = generator(
-            prompt, 
-            max_length=150, 
-            num_return_sequences=1, 
-            temperature=0.3,  # Lower temperature for more conservative outputs
+            prompt,
+            max_length=150,
+            num_return_sequences=1,
+            temperature=0.2,  # Lower temperature for more precise outputs
             do_sample=True,
-            top_k=50,
-            top_p=0.9
+            top_k=40,
+            top_p=0.85,
+            truncation=True
         )
         
         full_response = output[0]["generated_text"]
@@ -141,10 +114,12 @@ Correct:"""
         
         # Clean up the output
         correction = correction.split("\n")[0].strip()
+        if "=" not in correction:
+            correction = f"{meme_text.split('=')[0].strip()} = {correction}"
+            
         return correction
     except Exception as e:
         logger.error(f"Error repairing meme: {e}")
-        st.error("Failed to repair the meme. Please check the logs.")
         return None
 
 # Streamlit app
@@ -157,69 +132,29 @@ def main():
                               ["Math Riddles", "Math Meme Repair"], 
                               index=0)
     
-    if app_mode == "Math Riddles":
-        st.title("Math Riddle Generator & Solver 🧩")
-        st.write("Welcome to the Math Riddle Generator & Solver! You can either generate new riddles or input your own riddle to get a solution.")
-        
-        # Create tabs for different functionalities
-        tab1, tab2 = st.tabs(["Generate Riddles", "Solve Your Riddle"])
-        
-        with tab1:
-            st.write("### Generate New Math Riddles")
-            num_riddles = st.selectbox("Select the number of riddles:", options=list(range(1, 11)), key="num_riddles")
-            
-            generator = load_riddle_model()
-            
-            if st.button("Generate Riddles", key="generate_riddles"):
-                if generator is None:
-                    st.error("Model is not loaded. Please check the logs.")
-                else:
-                    st.write("Generating riddles...")
-                    riddles = generate_riddles(generator, num_riddles)
-                    st.write("### Generated Riddles:")
-                    for i, riddle in enumerate(riddles, 1):
-                        st.write(f"{i}. {riddle}")
-        
-        with tab2:
-            st.write("### Get a Solution for Your Riddle")
-            custom_riddle = st.text_area("Enter your math riddle:", height=100, key="custom_riddle")
-            
-            if st.button("Get Solution", key="get_solution"):
-                if not custom_riddle.strip():
-                    st.warning("Please enter a riddle first.")
-                else:
-                    generator = load_riddle_model()
-                    if generator is None:
-                        st.error("Model is not loaded. Please check the logs.")
-                    else:
-                        st.write("Generating solution...")
-                        solution = generate_solution(generator, custom_riddle)
-                        if solution:
-                            st.write("### Your Riddle:")
-                            st.write(custom_riddle)
-                            st.write("### Possible Solution:")
-                            st.write(solution)
-    
-    elif app_mode == "Math Meme Repair":
+    if app_mode == "Math Meme Repair":
         st.title("Math Meme Repair Tool 🔧")
         st.write("Fix those viral math memes that get shared with incorrect solutions!")
         
-        # Create tabs for different functionalities
+        # Load model once
+        meme_generator = load_model("./math_meme_repair")
+        
         tab1, tab2, tab3 = st.tabs(["Before/After Examples", "Solve Your Math Meme", "Error Rating"])
         
         with tab1:
             st.write("### Common Math Meme Mistakes and Corrections")
             
-            meme_generator = load_meme_model()
-            num_examples = st.selectbox("Select number of examples to show:", 
-                                      options=list(range(1, 6)), 
-                                      key="num_examples")
+            num_examples = st.selectbox(
+                "Select number of examples to show:", 
+                options=list(range(1, 6)), 
+                key="num_examples"
+            )
             
             if st.button("Generate Examples", key="generate_examples"):
                 if meme_generator is None:
-                    st.error("Model is not loaded. Please check the logs.")
+                    st.error("Model failed to load. Check logs.")
                 else:
-                    with st.spinner("Generating examples..."):
+                    with st.spinner("Generating fresh examples..."):
                         examples = generate_meme_examples(meme_generator, num_examples)
                         
                         if examples:
@@ -233,27 +168,30 @@ def main():
                                     st.code(example["after"], language="text")
                                 st.markdown("---")
                         else:
-                            st.warning("Could not generate examples. Please try again.")
+                            st.error("Failed to generate examples. Try again or check logs.")
         
         with tab2:
             st.write("### Fix Your Own Math Meme")
-            meme_text = st.text_input("Enter the incorrect math statement:", key="meme_text")
+            meme_text = st.text_input(
+                "Enter the incorrect math statement (e.g., '2 + 2 × 2 = 8'):", 
+                key="meme_text"
+            )
             
             if st.button("Repair This Meme", key="repair_meme"):
                 if not meme_text.strip():
                     st.warning("Please enter a math statement first.")
+                elif meme_generator is None:
+                    st.error("Model failed to load. Check logs.")
                 else:
-                    meme_generator = load_meme_model()
-                    if meme_generator is None:
-                        st.error("Model is not loaded. Please check the logs.")
-                    else:
-                        with st.spinner("Analyzing and repairing..."):
-                            correction = repair_meme(meme_generator, meme_text)
-                            if correction:
-                                st.write("### Original:")
-                                st.code(meme_text, language="text")
-                                st.write("### Correction:")
-                                st.code(correction, language="text")
+                    with st.spinner("Analyzing and repairing..."):
+                        correction = repair_meme(meme_generator, meme_text)
+                        if correction:
+                            st.write("### Original:")
+                            st.code(meme_text, language="text")
+                            st.write("### Correction:")
+                            st.code(correction, language="text")
+                        else:
+                            st.error("Failed to generate correction. Try again or check logs.")
         
         with tab3:
             st.markdown(ERROR_RATING)

@@ -8,15 +8,6 @@ import random
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Sample before/after meme examples
-MEME_EXAMPLES = [
-    {"before": "2 + 2 × 2 = 8", "after": "2 + 2 × 2 = 6 (PEMDAS: multiplication before addition)"},
-    {"before": "10 ÷ 0.5 = 5", "after": "10 ÷ 0.5 = 20 (dividing by 0.5 = multiplying by 2)"},
-    {"before": "1/2 + 1/3 = 2/5", "after": "1/2 + 1/3 = 5/6 (need common denominator)"},
-    {"before": "5! = 100", "after": "5! = 120 (5 factorial = 5×4×3×2×1)"},
-    {"before": "8 ÷ 2(2+2) = 1", "after": "8 ÷ 2(2+2) = 16 (PEMDAS left-to-right for same precedence)"},
-]
-
 # Error rating content
 ERROR_RATING = """
 ### Model Performance Rating 🔧
@@ -93,12 +84,63 @@ def generate_solution(generator, riddle):
         st.error("Failed to generate a solution. Please check the logs.")
         return None
 
-# Function to repair math meme
+# Function to generate before/after examples
+def generate_meme_examples(generator, num_examples):
+    examples = []
+    prompts = [
+        "Incorrect: 2 + 2 × 2 = 8",
+        "Incorrect: 10 ÷ 0.5 = 5",
+        "Incorrect: 1/2 + 1/3 = 2/5",
+        "Incorrect: 5! = 100",
+        "Incorrect: 8 ÷ 2(2+2) = 1",
+        "Incorrect: 4^0 = 0",
+        "Incorrect: log(100) = 10",
+        "Incorrect: 1 mile = 5000 feet",
+        "Incorrect: (x + y)(x - y) = x² + y²",
+        "Incorrect: 0.1 + 0.2 = 0.3"
+    ]
+    
+    selected_prompts = random.sample(prompts, min(num_examples, len(prompts)))
+    
+    for prompt in selected_prompts:
+        try:
+            output = generator(prompt, max_length=100, num_return_sequences=1, temperature=0.7)
+            generated_text = output[0]["generated_text"]
+            
+            # Extract before and after parts
+            if "\nCorrect:" in generated_text:
+                before = prompt.replace("Incorrect: ", "").strip()
+                after = generated_text.split("\nCorrect:")[1].strip()
+                examples.append({"before": before, "after": after})
+        except Exception as e:
+            logger.error(f"Error generating meme example: {e}")
+    
+    return examples
+
+# Function to repair math meme with improved prompt
 def repair_meme(generator, meme_text):
     try:
-        prompt = f"Incorrect: {meme_text}\nCorrect:"
-        output = generator(prompt, max_length=100, num_return_sequences=1, temperature=0.7)
-        correction = output[0]["generated_text"].replace(prompt, "").strip()
+        # More detailed prompt for better results
+        prompt = f"""The following math statement is incorrect. Please provide the correct version and a brief explanation.
+
+Incorrect: {meme_text}
+Correct:"""
+        
+        output = generator(
+            prompt, 
+            max_length=150, 
+            num_return_sequences=1, 
+            temperature=0.3,  # Lower temperature for more conservative outputs
+            do_sample=True,
+            top_k=50,
+            top_p=0.9
+        )
+        
+        full_response = output[0]["generated_text"]
+        correction = full_response.split("Correct:")[1].strip() if "Correct:" in full_response else full_response
+        
+        # Clean up the output
+        correction = correction.split("\n")[0].strip()
         return correction
     except Exception as e:
         logger.error(f"Error repairing meme: {e}")
@@ -168,23 +210,30 @@ def main():
         with tab1:
             st.write("### Common Math Meme Mistakes and Corrections")
             
-            # Counter for examples
-            if 'example_counter' not in st.session_state:
-                st.session_state.example_counter = 0
+            meme_generator = load_meme_model()
+            num_examples = st.selectbox("Select number of examples to show:", 
+                                      options=list(range(1, 6)), 
+                                      key="num_examples")
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**Incorrect Version**")
-                st.write(f"`{MEME_EXAMPLES[st.session_state.example_counter]['before']}`")
-            
-            with col2:
-                st.write("**Corrected Version**")
-                st.write(f"`{MEME_EXAMPLES[st.session_state.example_counter]['after']}`")
-            
-            if st.button("Next Example"):
-                st.session_state.example_counter = (st.session_state.example_counter + 1) % len(MEME_EXAMPLES)
-                st.experimental_rerun()
+            if st.button("Generate Examples", key="generate_examples"):
+                if meme_generator is None:
+                    st.error("Model is not loaded. Please check the logs.")
+                else:
+                    with st.spinner("Generating examples..."):
+                        examples = generate_meme_examples(meme_generator, num_examples)
+                        
+                        if examples:
+                            for example in examples:
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write("**Incorrect Version**")
+                                    st.code(example["before"], language="text")
+                                with col2:
+                                    st.write("**Corrected Version**")
+                                    st.code(example["after"], language="text")
+                                st.markdown("---")
+                        else:
+                            st.warning("Could not generate examples. Please try again.")
         
         with tab2:
             st.write("### Fix Your Own Math Meme")
@@ -194,17 +243,17 @@ def main():
                 if not meme_text.strip():
                     st.warning("Please enter a math statement first.")
                 else:
-                    generator = load_meme_model()
-                    if generator is None:
+                    meme_generator = load_meme_model()
+                    if meme_generator is None:
                         st.error("Model is not loaded. Please check the logs.")
                     else:
-                        st.write("Analyzing and repairing...")
-                        correction = repair_meme(generator, meme_text)
-                        if correction:
-                            st.write("### Original:")
-                            st.write(f"`{meme_text}`")
-                            st.write("### Correction:")
-                            st.write(f"`{correction}`")
+                        with st.spinner("Analyzing and repairing..."):
+                            correction = repair_meme(meme_generator, meme_text)
+                            if correction:
+                                st.write("### Original:")
+                                st.code(meme_text, language="text")
+                                st.write("### Correction:")
+                                st.code(correction, language="text")
         
         with tab3:
             st.markdown(ERROR_RATING)

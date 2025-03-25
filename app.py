@@ -146,7 +146,7 @@ def main():
         st.title("Math Riddle Solver 🧠")
         st.write("Solve challenging math riddles with AI assistance!")
         
-        riddle_generator = load_model("./math_riddle_solver")
+        riddle_generator = load_model("./math_riddle_generator")
         
         tab1, tab2 = st.tabs(["Solve Riddles", "Create Riddles"])
         

@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import logging
 import random
@@ -115,6 +114,26 @@ Correct:"""
         logger.error(f"Error repairing meme: {e}")
         return None
 
+def generate_riddle_solution(generator, riddle):
+    try:
+        prompt = f"Riddle: {riddle}\nSolution:"
+        
+        output = generator(
+            prompt,
+            max_length=100,
+            num_return_sequences=1,
+            temperature=0.7,
+            truncation=True
+        )
+        
+        generated_text = output[0]["generated_text"]
+        solution = generated_text.split("Solution:")[1].strip() if "Solution:" in generated_text else generated_text
+        
+        return solution.split("\n")[0].strip()
+    except Exception as e:
+        logger.error(f"Error generating riddle solution: {e}")
+        return None
+
 def main():
     st.set_page_config(page_title="Math Fun", layout="wide")
     
@@ -123,7 +142,60 @@ def main():
                               ["Math Riddles", "Math Meme Repair"], 
                               index=0)
     
-    if app_mode == "Math Meme Repair":
+    if app_mode == "Math Riddles":
+        st.title("Math Riddle Solver 🧠")
+        st.write("Solve challenging math riddles with AI assistance!")
+        
+        riddle_generator = load_model("./math_riddle_solver")
+        
+        tab1, tab2 = st.tabs(["Solve Riddles", "Create Riddles"])
+        
+        with tab1:
+            st.write("### Enter a Math Riddle")
+            user_riddle = st.text_input(
+                "Type your math riddle here (e.g., 'What number do you get when you subtract 10 from 20?'):",
+                key="user_riddle"
+            )
+            
+            if st.button("Solve Riddle", key="solve_riddle"):
+                if not user_riddle.strip():
+                    st.warning("Please enter a riddle first.")
+                elif riddle_generator is None:
+                    st.error("Model failed to load. Check logs.")
+                else:
+                    with st.spinner("Thinking hard about this riddle..."):
+                        solution = generate_riddle_solution(riddle_generator, user_riddle)
+                        if solution:
+                            st.write("### Your Riddle:")
+                            st.code(user_riddle, language="text")
+                            st.write("### Solution:")
+                            st.code(solution, language="text")
+                        else:
+                            st.error("Failed to generate solution. Try again or check logs.")
+        
+        with tab2:
+            st.write("### Generate Random Math Riddles")
+            if st.button("Generate New Riddle", key="generate_riddle"):
+                if riddle_generator is None:
+                    st.error("Model failed to load. Check logs.")
+                else:
+                    with st.spinner("Creating an interesting riddle..."):
+                        output = riddle_generator(
+                            "Riddle:",
+                            max_length=100,
+                            num_return_sequences=1,
+                            temperature=0.8,
+                            truncation=True
+                        )
+                        generated_text = output[0]["generated_text"]
+                        if "Solution:" in generated_text:
+                            riddle_part = generated_text.split("Solution:")[0].strip()
+                            st.write("### New Riddle:")
+                            st.code(riddle_part, language="text")
+                        else:
+                            st.code(generated_text, language="text")
+    
+    elif app_mode == "Math Meme Repair":
         st.title("Math Meme Repair Tool 🔧")
         st.write("Fix those viral math memes that get shared with incorrect solutions!")
         

@@ -134,6 +134,31 @@ def generate_riddle_solution(generator, riddle):
         logger.error(f"Error generating riddle solution: {e}")
         return None
 
+def generate_riddles(generator, num_riddles):
+    try:
+        riddles = []
+        for _ in range(num_riddles):
+            output = generator(
+                "Riddle:",
+                max_length=150,
+                num_return_sequences=1,
+                temperature=0.8,
+                truncation=True
+            )
+            generated_text = output[0]["generated_text"]
+            
+            if "Solution:" in generated_text:
+                riddle_part = generated_text.split("Solution:")[0].strip()
+                solution_part = generated_text.split("Solution:")[1].strip().split("\n")[0]
+                riddles.append({"riddle": riddle_part, "solution": solution_part})
+            else:
+                riddles.append({"riddle": generated_text, "solution": "Could not generate solution"})
+        
+        return riddles
+    except Exception as e:
+        logger.error(f"Error generating riddles: {e}")
+        return None
+
 def main():
     st.set_page_config(page_title="Math Fun", layout="wide")
     
@@ -148,7 +173,7 @@ def main():
         
         riddle_generator = load_model("./math_riddle_generator")
         
-        tab1, tab2 = st.tabs(["Solve Riddles", "Create Riddles"])
+        tab1, tab2 = st.tabs(["Solve Riddles", "Generate Riddles"])
         
         with tab1:
             st.write("### Enter a Math Riddle")
@@ -174,26 +199,28 @@ def main():
                             st.error("Failed to generate solution. Try again or check logs.")
         
         with tab2:
-            st.write("### Generate Random Math Riddles")
-            if st.button("Generate New Riddle", key="generate_riddle"):
+            st.write("### Generate Math Riddles")
+            num_riddles = st.selectbox(
+                "Select number of riddles to generate:",
+                options=list(range(1, 11)),  # 1-10 options
+                key="num_riddles"
+            )
+            
+            if st.button("Generate Riddles", key="generate_riddles"):
                 if riddle_generator is None:
                     st.error("Model failed to load. Check logs.")
                 else:
-                    with st.spinner("Creating an interesting riddle..."):
-                        output = riddle_generator(
-                            "Riddle:",
-                            max_length=100,
-                            num_return_sequences=1,
-                            temperature=0.8,
-                            truncation=True
-                        )
-                        generated_text = output[0]["generated_text"]
-                        if "Solution:" in generated_text:
-                            riddle_part = generated_text.split("Solution:")[0].strip()
-                            st.write("### New Riddle:")
-                            st.code(riddle_part, language="text")
+                    with st.spinner(f"Generating {num_riddles} math riddles..."):
+                        generated_riddles = generate_riddles(riddle_generator, num_riddles)
+                        if generated_riddles:
+                            for i, riddle in enumerate(generated_riddles, 1):
+                                st.write(f"#### Riddle {i}:")
+                                st.code(riddle["riddle"], language="text")
+                                st.write("**Solution:**")
+                                st.code(riddle["solution"], language="text")
+                                st.markdown("---")
                         else:
-                            st.code(generated_text, language="text")
+                            st.error("Failed to generate riddles. Try again or check logs.")
     
     elif app_mode == "Math Meme Repair":
         st.title("Math Meme Repair Tool 🔧")
